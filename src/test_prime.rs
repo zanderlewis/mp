@@ -1,25 +1,94 @@
 use num_bigint::BigUint;
-use num_traits::{One, Zero};
-use rayon::prelude::*;
+use num_traits::One;
 use num_integer::Integer;
-use std::sync::Arc;
+use ocl::{flags, ProQue};
+use std::error::Error;
+use indicatif::{ProgressBar, ProgressStyle};
 
-pub fn lucas_lehmer(p: u128) -> bool {
+pub fn lucas_lehmer(p: u128) -> Result<bool, Box<dyn Error>> {
     if p == 2 {
-        return true;
+        return Ok(true);
     }
 
+    // Construct Mersenne number M = 2^p - 1
     let m = (&BigUint::one() << p) - 1u32;
     let iterations = p - 2;
-    let s = Arc::new(std::sync::Mutex::new(BigUint::from(4u32)));
 
-    (0..iterations).into_par_iter().for_each(|_| {
-        let mut s_lock = s.lock().unwrap();
-        *s_lock = (&*s_lock * &*s_lock - 2u32) % &m;
-    });
+    // OpenCL kernel source code
+    let src = r#"
+    __kernel void lucas_lehmer(__global ulong* s, __global const ulong* m) {
+        ulong a = s[0];
+        // Perform s = (s * s - 2) mod m
+        ulong result = (a * a - 2) % m[0];
+        s[0] = result;
+    }
+    "#;
 
-    let final_s = s.lock().unwrap();
-    final_s.is_zero()
+    // Initialize OpenCL
+    let pro_que = ProQue::builder()
+        .src(src)
+        .dims(1)
+        .build()?;
+
+    // Ensure M fits in u64
+    let m_u64 = match m.to_u64_digits().get(0) {
+        Some(&num) => num,
+        None => {
+            return Err("Mersenne number exceeds u64 limit.".into());
+        }
+    };
+    let mut s_host = vec![4u64];
+    let m_host = vec![m_u64];
+
+    // Create buffers using buffer_builder from ProQue
+    let s_buffer = pro_que.buffer_builder()
+        .flags(flags::MEM_READ_WRITE)
+        .len(1)
+        .copy_host_slice(&s_host)
+        .build()?;
+
+    let m_buffer = pro_que.buffer_builder()
+        .flags(flags::MEM_READ_ONLY)
+        .len(1)
+        .copy_host_slice(&m_host)
+        .build()?;
+
+    // Build the kernel and set arguments
+    let kernel = pro_que.kernel_builder("lucas_lehmer")
+        .arg(&s_buffer)
+        .arg(&m_buffer)
+        .build()?;
+
+    // clear terminal
+    print!("\x1B[2J\x1B[1;1H");
+
+    // Initialize the progress bar
+    let pb = ProgressBar::new(iterations as u64);
+    let style = ProgressStyle::default_bar()
+        .template("{msg} [{bar:40.cyan/blue}] {pos}/{len} ({eta_precise})")?
+        .progress_chars("=>-");
+    pb.set_style(style);
+    pb.set_message("Performing Lucas-Lehmer Test");
+
+    for _ in 0..iterations {
+        unsafe {
+            kernel.enq()?;
+        }
+        pb.inc(1);
+    }
+
+    pb.finish_with_message("Test Completed");
+
+    // clear terminal
+    print!("\x1B[2J\x1B[1;1H");
+
+    // Read the result back to host
+    s_buffer.read(&mut s_host).enq()?;
+
+    // Print the result
+    println!("{} is {}a Mersenne prime.", m, if s_host[0] == 0 { "" } else { "not " });
+
+    Ok(s_host[0] == 0)
 }
 
 pub fn is_prp(n: &BigUint, base: u128) -> bool {
