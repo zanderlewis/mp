@@ -1,0 +1,15 @@
+[package]
+name = "mersenne-prime"
+version = "0.1.0"
+edition = "2021"
+description = "Mersenne prime number checker using the PRP and Lucas-Lehmer tests."
+license = "MIT"
+repository = "https://github.com/zanderlewis/mp"
+readme = "README.md"
+authors = ["Zander Lewis <zander@zanderlewis.dev>"]
+
+[dependencies]
+num-bigint = "0.4"
+num-integer = "0.1"
+num-traits = "0.2"
+rayon = "1.5"
