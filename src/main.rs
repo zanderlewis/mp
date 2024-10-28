@@ -32,7 +32,6 @@ fn main() {
                 .short('f')
                 .long("from-list")
                 .takes_value(true)
-                .required_unless_present("generate")
                 .conflicts_with("generate")
                 .help("Reads numbers from a file and uses them for the Lucas-Lehmer test"),
         )
