@@ -17,29 +17,28 @@ fn main() {
             Arg::new("ll")
                 .short('l')
                 .long("ll")
-                .takes_value(false)
+                .action(clap::ArgAction::SetTrue)
                 .help("Performs the Lucas-Lehmer test"),
         )
         .arg(
             Arg::new("prp")
                 .short('p')
                 .long("prp")
-                .takes_value(false)
+                .action(clap::ArgAction::SetTrue)
                 .help("Performs the Probable Prime test"),
         )
         .arg(
             Arg::new("from_list")
                 .short('f')
                 .long("from-list")
-                .takes_value(true)
+                .num_args(1)
                 .conflicts_with("generate")
                 .help("Reads numbers from a file and uses them for the Lucas-Lehmer test"),
         )
         .arg(
             Arg::new("number")
                 .help("Number(s) for the test")
-                .takes_value(true)
-                .multiple_values(true)
+                .num_args(1..)
                 .required_unless_present("generate")
                 .conflicts_with("generate"),
         )
@@ -47,8 +46,7 @@ fn main() {
             Arg::new("generate")
                 .short('g')
                 .long("generate")
-                .takes_value(true)
-                .number_of_values(2)
+                .num_args(2)
                 .value_names(&["START", "END"])
                 .help("Generates all primes in the range from START to END"),
         )
@@ -56,13 +54,13 @@ fn main() {
             Arg::new("output")
                 .short('o')
                 .long("output")
-                .takes_value(true)
+                .num_args(1)
                 .help("Output file for generated primes"),
         )
         .get_matches();
 
-    if matches.is_present("generate") {
-        let mut values = matches.values_of("generate").unwrap();
+    if matches.contains_id("generate") {
+        let mut values = matches.get_many::<String>("generate").unwrap();
         let start = values
             .next()
             .unwrap()
@@ -75,8 +73,8 @@ fn main() {
             .expect("Invalid end number");
         match generate_primes(start, end) {
             Ok(p) => {
-                if matches.is_present("output") {
-                    let filename = matches.value_of("output").unwrap();
+                if matches.contains_id("output") {
+                    let filename = matches.get_one::<String>("output").unwrap();
                     write_primes_to_file(&p, filename).expect("Failed to write primes to file");
                 } else {
                     for prime in p {
@@ -86,67 +84,67 @@ fn main() {
             }
             Err(e) => eprintln!("Error generating primes: {}", e),
         }
-    } else if matches.is_present("ll") || matches.is_present("prp") {
-        let numbers = matches.values_of("number").unwrap();
-        for number_str in numbers {
-            let number: u128 = match number_str.parse() {
-                Ok(num) => num,
-                Err(_) => {
-                    eprintln!("Please enter a valid number.");
-                    continue;
-                }
-            };
-            if matches.is_present("ll") {
-                if matches.is_present("from_list") {
-                    let filename = matches.value_of("from_list").unwrap();
-                    println!("Reading numbers from file {}...", filename);
-                    let numbers = std::fs::read_to_string(filename).expect("Failed to read file");
-                    let numbers: Vec<u128> = numbers
-                        .lines()
-                        .map(|line| line.parse().expect("Invalid number in file"))
-                        .collect();
-                    for number in numbers {
-                        println!("Checking if 2^{} - 1 is a Mersenne prime...", number);
-                        if lucas_lehmer(number).unwrap() {
-                            if matches.is_present("output") {
-                                let filename = matches.value_of("output").unwrap();
-                                let mut file = std::fs::OpenOptions::new()
-                                    .append(true)
-                                    .create(true)
-                                    .open(filename)
-                                    .expect("Failed to open file");
-                                let m_prime = (&<BigUint as num_traits::One>::one() << number) - 1u32;
-                                writeln!(file, "{}", m_prime).expect("Failed to write to file");
-                            } else {
-                                let m_prime = (&<BigUint as num_traits::One>::one() << number) - 1u32;
-                                println!("2^{} - 1 is a Mersenne prime: {}", number, m_prime);
-                            }
-                        } else {
-                            println!("2^{} - 1 is not a Mersenne prime.", number);
-                        }
+    } else if matches.contains_id("ll") || matches.contains_id("prp") {
+        if matches.contains_id("from_list") {
+            let filename = matches.get_one::<String>("from_list").unwrap();
+            println!("Reading numbers from file {}...", filename);
+            let contents = std::fs::read_to_string(filename).expect("Failed to read file");
+            let numbers: Vec<String> = contents.lines().map(|s| s.to_string()).collect();
+            for number_str in numbers {
+                let number: u128 = match number_str.parse() {
+                    Ok(num) => num,
+                    Err(_) => {
+                        eprintln!("Invalid number in file: {}", number_str);
+                        continue;
                     }
-                    continue;
-                }
-                else {
-                    println!("Checking if 2^{} - 1 is a Mersenne prime...", number);
-                    if lucas_lehmer(number).unwrap() {
-                        let m_prime = (&<BigUint as num_traits::One>::one() << number) - 1u32;
-                        println!("2^{} - 1 is a Mersenne prime: {}", number, m_prime);
-                    } else {
-                        println!("2^{} - 1 is not a Mersenne prime.", number);
-                    }
-                }
-            } else if matches.is_present("prp") {
-                println!("Checking if {} is a probable prime...", number);
-                let big_number = BigUint::from(number);
-                if is_prp(&big_number, 2) {
-                    println!("{} is a probable prime.", number);
-                } else {
-                    println!("{} is not a probable prime.", number);
-                }
+                };
+                process_number(number, &matches);
             }
+        } else if let Some(numbers) = matches.get_many::<String>("number") {
+            for number_str in numbers {
+                let number: u128 = match number_str.parse() {
+                    Ok(num) => num,
+                    Err(_) => {
+                        eprintln!("Please enter a valid number.");
+                        continue;
+                    }
+                };
+                process_number(number, &matches);
+            }
+        } else {
+            eprintln!("No numbers provided.");
         }
     } else {
         eprintln!("No action specified. Use -l/--ll or -p/--prp or -g/--generate.");
+    }
+}
+
+fn process_number(number: u128, matches: &clap::ArgMatches) {
+    if matches.contains_id("ll") {
+        println!("Checking if 2^{} - 1 is a Mersenne prime...", number);
+        if lucas_lehmer(number).unwrap() {
+            let m_prime = (BigUint::from(1u32) << number) - 1u32;
+            if matches.contains_id("output") {
+                let filename = matches.get_one::<String>("output").unwrap();
+                let mut file = std::fs::OpenOptions::new()
+                    .append(true)
+                    .create(true)
+                    .open(filename)
+                    .expect("Failed to open file");
+                writeln!(file, "{}", m_prime).expect("Failed to write to file");
+            } else {
+                println!("2^{} - 1 is a Mersenne prime: {}", number, m_prime);
+            }
+        } else {
+            println!("2^{} - 1 is not a Mersenne prime.", number);
+        }
+    } else if matches.contains_id("prp") {
+        println!("Checking if {} is a probable prime...", number);
+        let big_number = BigUint::from(number);
+        if is_prp(&big_number, 2) {
+            println!("{} is a probable prime.", number);
+        } else {
+            println!("{} is not a probable prime.", number);
+        }
     }
 }
