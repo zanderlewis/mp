@@ -11,3 +11,6 @@ Cargo.lock
 
 # [ MERSENNE PRIME ] #
 prime_out.txt
+lucas_lehmer_state.bin
+DEBUG.txt
+out.txt
